@@ -1,7 +1,9 @@
-use image::{GenericImageView, ImageBuffer, Rgba};
+use image::{GenericImageView, ImageBuffer};
 use std::env;
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
+use rayon::prelude::*;
 
 fn main() {
     // Get the directory path from command line arguments
@@ -12,15 +14,17 @@ fn main() {
     let dir_path = Path::new(&args[1]);
 
     // List of PNGs
-    let pngs: Vec<_> = fs::read_dir(dir_path)
+    let mut pngs: Vec<_> = fs::read_dir(dir_path)
         .unwrap()
         .filter_map(Result::ok)
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "png"))
         .map(|e| e.path())
         .collect();
 
+    // Sort the PNGs by their names
+    pngs.sort_by_key(|path| path.file_name().unwrap().to_owned());
+
     // Determine grid size
-    // let grid_size = (pngs.len() as f64).sqrt().ceil() as u32;
     let grid_width = 8;
     let grid_height = 6;
 
@@ -31,24 +35,24 @@ fn main() {
     };
 
     // Create a new image buffer
-    let mut imgbuf: ImageBuffer<Rgba<u8>, Vec<u8>> =
-        ImageBuffer::new(width * grid_width, height * grid_height);
+    let imgbuf = Arc::new(Mutex::new(ImageBuffer::new(width * grid_width, height * grid_height)));
 
     // Iterate over the images and copy them into the image buffer
-    for (i, png) in pngs.iter().take(48).enumerate() {
+    pngs.par_iter().take(48).enumerate().for_each(|(i, png)| {
         let img = match image::open(png) {
             Ok(img) => img,
             Err(_) => panic!("Error opening image"),
         };
-
-        let x = (i as u32 % grid_width) * width;
-        let y = (i as u32 / grid_width) * height;
-
+    
+        let x = (grid_width - 1 - (i as u32 % grid_width)) * width;
+        let y = (grid_height - 1 - (i as u32 / grid_width)) * height;
+    
         for (px, py, pixel) in img.to_rgba8().enumerate_pixels() {
+            let mut imgbuf = imgbuf.lock().unwrap();
             imgbuf.put_pixel(x + px, y + py, *pixel);
         }
-    }
+    });
 
     // Save the stitched image
-    imgbuf.save("stitched.png").unwrap();
+    imgbuf.lock().unwrap().save("stitched.png").unwrap();
 }
