@@ -1,0 +1,1 @@
+An attempt to write a rust script that converts a 360 video / series of images into quilts for displaying on looking glass displays.
